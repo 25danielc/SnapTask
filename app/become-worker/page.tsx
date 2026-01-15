@@ -21,6 +21,7 @@ export default function BecomeWorkerPage() {
     title: "",
     hourlyRate: "",
     availability: "Available Now",
+    location: "",
     bio: "",
     skills: [] as string[],
   })
@@ -75,6 +76,7 @@ export default function BecomeWorkerPage() {
             title: formData.title,
             hourly_rate: parseFloat(formData.hourlyRate),
             availability: formData.availability,
+            location: formData.location.trim() || null,
           })
           .eq("user_id", user.id)
           .select()
@@ -91,6 +93,7 @@ export default function BecomeWorkerPage() {
             title: formData.title,
             hourly_rate: parseFloat(formData.hourlyRate),
             availability: formData.availability,
+            location: formData.location.trim() || null,
           })
           .select()
           .single()
@@ -223,6 +226,19 @@ export default function BecomeWorkerPage() {
                 <option value="Available in 2 days">Available in 2 days</option>
                 <option value="Available in 1 week">Available in 1 week</option>
               </select>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="location">Location</Label>
+              <Input
+                id="location"
+                placeholder="City, State or Address (e.g., San Francisco, CA)"
+                value={formData.location}
+                onChange={(e) => setFormData({ ...formData, location: e.target.value })}
+              />
+              <p className="text-xs text-muted-foreground">
+                Let clients know where you're located
+              </p>
             </div>
 
             <div className="space-y-2">

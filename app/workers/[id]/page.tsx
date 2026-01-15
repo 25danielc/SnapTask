@@ -9,7 +9,7 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { Skeleton } from "@/components/ui/skeleton"
 import { BackButton } from "@/components/back-button"
 import { StarRating } from "@/components/star-rating"
-import { Star, Clock, DollarSign, User } from "lucide-react"
+import { Star, Clock, DollarSign, User, MapPin } from "lucide-react"
 import type { WorkerData } from "@/lib/utils/worker-data"
 
 interface Review {
@@ -131,6 +131,12 @@ export default function WorkerProfilePage() {
                   <DollarSign className="h-4 w-4" />
                   <span>${worker.hourlyRate}/hr</span>
                 </div>
+                {worker.location && (
+                  <div className="flex items-center gap-2 text-muted-foreground">
+                    <MapPin className="h-4 w-4" />
+                    <span>{worker.location}</span>
+                  </div>
+                )}
               </div>
               <div className="flex flex-wrap gap-2">
                 {worker.skills.map((skill) => (

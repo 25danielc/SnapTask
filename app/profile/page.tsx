@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useEffect, useState, useRef } from "react"
 import { useRouter } from "next/navigation"
 import { useAuth } from "@/lib/hooks/use-auth"
 import { createClient } from "@/lib/supabase/client"
@@ -12,7 +12,8 @@ import { Textarea } from "@/components/ui/textarea"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { Skeleton } from "@/components/ui/skeleton"
 import { BackButton } from "@/components/back-button"
-import { User } from "lucide-react"
+import { User, Upload, X } from "lucide-react"
+import { toast } from "sonner"
 
 export default function ProfilePage() {
   const router = useRouter()
@@ -21,6 +22,9 @@ export default function ProfilePage() {
   const [profile, setProfile] = useState<any>(null)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
+  const [uploading, setUploading] = useState(false)
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null)
+  const fileInputRef = useRef<HTMLInputElement>(null)
   const [formData, setFormData] = useState({
     full_name: "",
     bio: "",
@@ -57,10 +61,95 @@ export default function ProfilePage() {
         bio: data?.bio || "",
         avatar_url: data?.avatar_url || "",
       })
+      if (data?.avatar_url) {
+        setPreviewUrl(data.avatar_url)
+      }
     } catch (error) {
       console.error("Error loading profile:", error)
     } finally {
       setLoading(false)
+    }
+  }
+
+  async function handleFileSelect(event: React.ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0]
+    if (!file) return
+
+    // Validate file type
+    if (!file.type.startsWith('image/')) {
+      toast.error('Please select an image file')
+      return
+    }
+
+    // Validate file size (max 5MB)
+    if (file.size > 5 * 1024 * 1024) {
+      toast.error('Image size must be less than 5MB')
+      return
+    }
+
+    // Create preview
+    const reader = new FileReader()
+    reader.onloadend = () => {
+      setPreviewUrl(reader.result as string)
+    }
+    reader.readAsDataURL(file)
+
+    // Upload to Supabase Storage
+    await uploadImage(file)
+  }
+
+  async function uploadImage(file: File) {
+    if (!user) return
+
+    setUploading(true)
+    try {
+      // Create a unique filename
+      const fileExt = file.name.split('.').pop()
+      const fileName = `${user.id}-${Date.now()}.${fileExt}`
+      const filePath = `avatars/${fileName}`
+
+      // Upload file to Supabase Storage
+      const { error: uploadError } = await supabase.storage
+        .from('avatars')
+        .upload(filePath, file, {
+          cacheControl: '3600',
+          upsert: true
+        })
+
+      if (uploadError) {
+        // If bucket doesn't exist, try to create it or use public folder
+        console.error('Upload error:', uploadError)
+        
+        // Try uploading to a public bucket or handle the error
+        if (uploadError.message.includes('Bucket not found')) {
+          toast.error('Storage bucket not configured. Please contact support or use a URL instead.')
+          setUploading(false)
+          return
+        }
+        throw uploadError
+      }
+
+      // Get public URL
+      const { data: { publicUrl } } = supabase.storage
+        .from('avatars')
+        .getPublicUrl(filePath)
+
+      // Update form data with the new URL
+      setFormData({ ...formData, avatar_url: publicUrl })
+      toast.success('Image uploaded successfully!')
+    } catch (error: any) {
+      console.error('Error uploading image:', error)
+      toast.error('Failed to upload image. Please try again.')
+    } finally {
+      setUploading(false)
+    }
+  }
+
+  function handleRemoveImage() {
+    setPreviewUrl(null)
+    setFormData({ ...formData, avatar_url: "" })
+    if (fileInputRef.current) {
+      fileInputRef.current.value = ""
     }
   }
 
@@ -83,11 +172,25 @@ export default function ProfilePage() {
         throw error
       }
 
+      // Also update worker image_url if user is a worker
+      const { data: worker } = await supabase
+        .from('workers')
+        .select('id')
+        .eq('user_id', user.id)
+        .maybeSingle()
+
+      if (worker && formData.avatar_url) {
+        await supabase
+          .from('workers')
+          .update({ image_url: formData.avatar_url })
+          .eq('id', worker.id)
+      }
+
       await loadProfile()
-      alert("Profile updated successfully!")
+      toast.success("Profile updated successfully!")
     } catch (error: any) {
       console.error("Error saving profile:", error)
-      alert("Failed to update profile. Please try again.")
+      toast.error("Failed to update profile. Please try again.")
     } finally {
       setSaving(false)
     }
@@ -134,12 +237,25 @@ export default function ProfilePage() {
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="flex items-center gap-4 mb-6">
-              <Avatar className="h-20 w-20 border-2 border-border">
-                <AvatarImage src={formData.avatar_url || undefined} />
-                <AvatarFallback className="bg-accent text-accent-foreground text-2xl font-semibold">
-                  {initials}
-                </AvatarFallback>
-              </Avatar>
+              <div className="relative">
+                <Avatar className="h-20 w-20 border-2 border-border">
+                  <AvatarImage src={previewUrl || formData.avatar_url || undefined} />
+                  <AvatarFallback className="bg-accent text-accent-foreground text-2xl font-semibold">
+                    {initials}
+                  </AvatarFallback>
+                </Avatar>
+                {previewUrl && (
+                  <Button
+                    type="button"
+                    variant="destructive"
+                    size="icon"
+                    className="absolute -top-2 -right-2 h-6 w-6 rounded-full"
+                    onClick={handleRemoveImage}
+                  >
+                    <X className="h-3 w-3" />
+                  </Button>
+                )}
+              </div>
               <div>
                 <div className="font-medium">{formData.full_name || user.email}</div>
                 <div className="text-sm text-muted-foreground">{user.email}</div>
@@ -157,13 +273,50 @@ export default function ProfilePage() {
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="avatar_url">Avatar URL</Label>
-              <Input
-                id="avatar_url"
-                value={formData.avatar_url}
-                onChange={(e) => setFormData({ ...formData, avatar_url: e.target.value })}
-                placeholder="https://example.com/avatar.jpg"
-              />
+              <Label htmlFor="avatar_upload">Profile Picture</Label>
+              <div className="flex gap-2">
+                <Input
+                  ref={fileInputRef}
+                  id="avatar_upload"
+                  type="file"
+                  accept="image/*"
+                  onChange={handleFileSelect}
+                  className="hidden"
+                />
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => fileInputRef.current?.click()}
+                  disabled={uploading}
+                  className="flex-1"
+                >
+                  <Upload className="mr-2 h-4 w-4" />
+                  {uploading ? "Uploading..." : "Upload Image"}
+                </Button>
+                {formData.avatar_url && (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    onClick={() => {
+                      const url = prompt("Enter image URL:", formData.avatar_url)
+                      if (url !== null) {
+                        setFormData({ ...formData, avatar_url: url })
+                        setPreviewUrl(url)
+                      }
+                    }}
+                    className="flex-1"
+                  >
+                    Or Use URL
+                  </Button>
+                )}
+              </div>
+              {formData.avatar_url && (
+                <p className="text-xs text-muted-foreground">
+                  Current: {formData.avatar_url.length > 50 
+                    ? formData.avatar_url.substring(0, 50) + "..." 
+                    : formData.avatar_url}
+                </p>
+              )}
             </div>
 
             <div className="space-y-2">

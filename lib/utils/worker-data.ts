@@ -12,6 +12,7 @@ export interface WorkerData {
   skills: string[]
   availability: string
   image: string
+  location?: string | null
 }
 
 /**
@@ -67,6 +68,7 @@ export function transformWorkerData(worker: any): WorkerData {
     skills: extractSkills(worker),
     availability: worker.availability || "Available Now",
     image: worker.image_url || profile.avatar_url || "/placeholder-user.jpg",
+    location: worker.location || null,
   }
 }
 

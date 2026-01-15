@@ -1,4 +1,4 @@
-import { Star, Clock } from "lucide-react"
+import { Star, Clock, MapPin } from "lucide-react"
 import { Card } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
@@ -16,6 +16,7 @@ interface WorkerCardProps {
     skills: string[]
     availability: string
     image: string
+    location?: string | null
   }
 }
 
@@ -52,6 +53,12 @@ export function WorkerCard({ worker }: WorkerCardProps) {
             <Clock className="h-4 w-4" />
             <span className="text-xs">{worker.availability}</span>
           </div>
+          {worker.location && (
+            <div className="flex items-center gap-1 text-muted-foreground">
+              <MapPin className="h-4 w-4" />
+              <span className="text-xs">{worker.location}</span>
+            </div>
+          )}
         </div>
 
         <div className="mb-4 flex flex-wrap gap-2">

@@ -53,6 +53,21 @@ const supabase = createClient(supabaseUrl, supabaseServiceKey, {
   }
 })
 
+// Available profile images to cycle through
+const profileImages = [
+  '/professional-woman-diverse.png',
+  '/professional-man.jpg',
+  '/professional-man-beard.png',
+  '/professional-asian-man.png',
+  '/professional-woman-glasses.png',
+  '/professional-woman-smile.jpg'
+]
+
+// Helper function to get image for a worker (cycles through available images)
+function getImageForWorker(index: number): string {
+  return profileImages[index % profileImages.length]
+}
+
 // Tech workers from University of Michigan and Bay Area schools
 const techWorkers = [
   {
@@ -443,7 +458,9 @@ async function seed() {
   let skipCount = 0
   let errorCount = 0
 
-  for (const workerData of allWorkers) {
+  for (let i = 0; i < allWorkers.length; i++) {
+    const workerData = allWorkers[i]
+    const workerImage = getImageForWorker(i)
     try {
       // Create auth user
       const { data: authUser, error: authError } = await supabase.auth.admin.createUser({
@@ -455,24 +472,37 @@ async function seed() {
         }
       })
 
+      let userId: string
+
       if (authError) {
         if (authError.message.includes('already registered') || authError.message.includes('already exists')) {
-          console.log(`⚠️  User ${workerData.email} already exists, skipping...`)
-          skipCount++
+          // User already exists, get their ID from profiles table
+          const { data: existingProfile } = await supabase
+            .from('profiles')
+            .select('id')
+            .eq('email', workerData.email)
+            .maybeSingle()
+
+          if (!existingProfile) {
+            console.log(`⚠️  User ${workerData.email} already exists but profile not found, skipping...`)
+            skipCount++
+            continue
+          }
+          userId = existingProfile.id
+          console.log(`⚠️  User ${workerData.email} already exists, updating...`)
+        } else {
+          throw authError
+        }
+      } else {
+        if (!authUser.user) {
+          console.error(`❌ Failed to create user ${workerData.email}`)
+          errorCount++
           continue
         }
-        throw authError
+        userId = authUser.user.id
       }
 
-      if (!authUser.user) {
-        console.error(`❌ Failed to create user ${workerData.email}`)
-        errorCount++
-        continue
-      }
-
-      const userId = authUser.user.id
-
-      // Create profile
+      // Create or update profile
       const { error: profileError } = await supabase
         .from('profiles')
         .upsert({
@@ -480,32 +510,65 @@ async function seed() {
           email: workerData.email,
           full_name: workerData.full_name,
           bio: workerData.bio,
+          avatar_url: workerImage,
         })
 
       if (profileError) {
-        console.error(`❌ Error creating profile for ${workerData.email}:`, profileError.message)
+        console.error(`❌ Error creating/updating profile for ${workerData.email}:`, profileError.message)
         errorCount++
         continue
       }
 
-      // Create worker profile
-      const { data: worker, error: workerError } = await supabase
+      // Check if worker already exists
+      const { data: existingWorker } = await supabase
         .from('workers')
-        .insert({
-          user_id: userId,
-          title: workerData.title,
-          hourly_rate: workerData.hourly_rate,
-          availability: workerData.availability,
-          rating: 4.0 + Math.random() * 1.0, // Random rating between 4.0-5.0
-          reviews_count: Math.floor(Math.random() * 50) + 5 // Random reviews 5-55
-        })
-        .select()
-        .single()
+        .select('id')
+        .eq('user_id', userId)
+        .maybeSingle()
 
-      if (workerError) {
-        console.error(`❌ Error creating worker for ${workerData.email}:`, workerError.message)
-        errorCount++
-        continue
+      let worker
+      if (existingWorker) {
+        // Update existing worker with image
+        const { data: updatedWorker, error: updateError } = await supabase
+          .from('workers')
+          .update({
+            image_url: workerImage,
+            title: workerData.title,
+            hourly_rate: workerData.hourly_rate,
+            availability: workerData.availability,
+          })
+          .eq('id', existingWorker.id)
+          .select()
+          .single()
+
+        if (updateError) {
+          console.error(`❌ Error updating worker for ${workerData.email}:`, updateError.message)
+          errorCount++
+          continue
+        }
+        worker = updatedWorker
+      } else {
+        // Create new worker profile
+        const { data: newWorker, error: workerError } = await supabase
+          .from('workers')
+          .insert({
+            user_id: userId,
+            title: workerData.title,
+            hourly_rate: workerData.hourly_rate,
+            availability: workerData.availability,
+            rating: 4.0 + Math.random() * 1.0, // Random rating between 4.0-5.0
+            reviews_count: Math.floor(Math.random() * 50) + 5, // Random reviews 5-55
+            image_url: workerImage,
+          })
+          .select()
+          .single()
+
+        if (workerError) {
+          console.error(`❌ Error creating worker for ${workerData.email}:`, workerError.message)
+          errorCount++
+          continue
+        }
+        worker = newWorker
       }
 
       // Add skills to worker

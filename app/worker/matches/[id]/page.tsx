@@ -134,6 +134,32 @@ export default function MatchDetailPage() {
     }
   }
 
+  async function handleComplete() {
+    if (!match) return
+    
+    if (!confirm("Mark this project as completed? This will notify the client that the work is done.")) {
+      return
+    }
+
+    setProcessing(true)
+    try {
+      const response = await fetch(`/api/worker/matches/${match.id}/complete`, {
+        method: "POST",
+      })
+      if (!response.ok) {
+        const data = await response.json()
+        throw new Error(data.error || "Failed to complete project")
+      }
+      toast.success("Project marked as completed!")
+      await loadMatch()
+    } catch (error: any) {
+      console.error("Error completing project:", error)
+      toast.error(error.message || "Failed to complete project")
+    } finally {
+      setProcessing(false)
+    }
+  }
+
   const getStatusBadge = (status: string) => {
     switch (status) {
       case 'accepted':
@@ -384,10 +410,22 @@ export default function MatchDetailPage() {
                 <CardTitle>Actions</CardTitle>
               </CardHeader>
               <CardContent className="space-y-3">
+                {match.projects.status === 'in_progress' && (
+                  <Button 
+                    onClick={handleComplete}
+                    disabled={processing}
+                    className="w-full"
+                    size="lg"
+                  >
+                    <CheckCircle className="h-4 w-4 mr-2" />
+                    Mark Project as Completed
+                  </Button>
+                )}
                 <Button 
                   asChild
                   className="w-full"
                   size="lg"
+                  variant={match.projects.status === 'in_progress' ? "outline" : "default"}
                 >
                   <a href="/worker/dashboard">View Progress Dashboard</a>
                 </Button>
@@ -400,6 +438,23 @@ export default function MatchDetailPage() {
                   <MessageSquare className="h-4 w-4 mr-2" />
                   Message Client
                 </Button>
+              </CardContent>
+            </Card>
+          )}
+
+          {match.status === 'completed' && (
+            <Card>
+              <CardHeader>
+                <CardTitle>Project Status</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="flex items-center gap-2 text-green-600 dark:text-green-400">
+                  <CheckCircle className="h-5 w-5" />
+                  <span className="font-medium">Project Completed</span>
+                </div>
+                <p className="text-sm text-muted-foreground mt-2">
+                  This project has been marked as completed. The client may leave a review.
+                </p>
               </CardContent>
             </Card>
           )}
